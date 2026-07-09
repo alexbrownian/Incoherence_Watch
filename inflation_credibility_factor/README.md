@@ -30,12 +30,13 @@ decomposes *exactly* into six component contributions — useful for asking
 | # | Notebook | What it does |
 |---|----------|--------------|
 | 1 | `01_build_factor.ipynb` | Pulls the 6 series from Bloomberg, builds the FOMC-pricing leg from fed funds futures, computes the 21d EWM z-scores, combines into the factor, plots it plus a per-component contribution stack. Caches results to CSV. |
-| 2 | `02_validate_and_predict.ipynb` | **Test:** decomposes the latest peak-to-now move into component shares; in mock mode this is checked against ground truth planted in the synthetic data. **Predict:** fits an AR(1) mean-reversion model, prints the shock half-life, draws a 21-day fan chart. |
+| 2 | `02_validate_and_predict.ipynb` | **Match:** overlays the factor on a benchmark trace digitized from the target chart (editable anchor points), scores 12 method variants (halflife/span/com x level/change x WTI/Brent) and adopts the best — model *selection*, not curve-fitting; weights stay equal, with a regularized weight fit used only as a diagnostic. **Decompose:** attributes the latest peak-to-now move to components (checked against planted ground truth in mock mode). **Predict:** AR(1) fan chart, 3-month horizon, plus a `live_refresh()` that re-pulls to today and extrapolates. |
 
 ## Supporting files
 
 | File | What it is |
 |------|-----------|
+| `factor_lib.py` | The construction as importable functions (with the method variants). Notebook 01 is the lesson; this is the source of truth for `live_refresh()`. |
 | `bbg.py` | Bloomberg plumbing + mock mode. The mock plants a known spike-and-unwind pattern with known component shares, giving the notebooks ground truth to test against. |
 | `signed_zscores.csv`, `factor.csv` | Caches written by notebook 01, read by notebook 02. |
 | `factor_recreation.png`, `factor_forecast.png` | The charts, saved on every run. |

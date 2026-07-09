@@ -109,6 +109,7 @@ _MOCK_CONFIG = {
     "USSWIT5 Curncy": ("swap", -1, 2.50,   0.07, 0.35),
     "XAU Curncy":     ("gold", -1, 2900.0, 45.0, 0.35),
     "CL1 Comdty":     ("oil",  -1, 70.0,   2.50, 0.35),
+    "CO1 Comdty":     ("oil",  -1, 74.0,   2.60, 0.38),
     "FEDL01 Index":   (None,    0, 4.33,   0.0,  0.01),
     # FFQ6 handled specially below (built from FEDL01 + planted hike pricing)
 }
