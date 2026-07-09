@@ -1,0 +1,214 @@
+"""
+bbg.py - Bloomberg Desktop API helper for the Inflation Credibility Factor.
+
+Same design as the incoherence_monitor version:
+- `blpapi` installed + Terminal running  -> real Bloomberg data
+- otherwise MOCK_MODE = True             -> synthetic data
+
+THE MOCK DATA HERE IS SPECIAL
+-----------------------------
+All six components are driven by one hidden "credibility" path that
+oscillates, SPIKES at the June 2026 FOMC, then UNWINDS into early July -
+with each component's share of the unwind planted at a known value
+(_UNWIND_SHARES below: 30y 31%, dollar 17%, 5y swaps 17%, FOMC 16%,
+oil 16%, gold 3%).
+
+That gives the notebooks ground truth: if the factor construction and the
+decomposition code recover this shape and roughly those shares, the METHOD
+is right, and the only remaining step is swapping in real Bloomberg data.
+"""
+import datetime as dt
+
+import numpy as np
+import pandas as pd
+
+try:
+    import blpapi  # noqa: F401
+    MOCK_MODE = False
+except ImportError:
+    blpapi = None
+    MOCK_MODE = True
+
+
+# ---------------------------------------------------------------------------
+# Real Bloomberg plumbing (identical to incoherence_monitor/bbg.py)
+# ---------------------------------------------------------------------------
+def _start_session():
+    options = blpapi.SessionOptions()
+    options.setServerHost("localhost")
+    options.setServerPort(8194)
+    session = blpapi.Session(options)
+    if not session.start():
+        raise ConnectionError("Could not start Bloomberg session. Terminal running?")
+    if not session.openService("//blp/refdata"):
+        raise ConnectionError("Could not open //blp/refdata.")
+    return session
+
+
+def _bdh_real(tickers, field, start, end):
+    session = _start_session()
+    service = session.getService("//blp/refdata")
+    all_series = {}
+
+    for ticker in tickers:
+        request = service.createRequest("HistoricalDataRequest")
+        request.getElement("securities").appendValue(ticker)
+        request.getElement("fields").appendValue(field)
+        request.set("startDate", start.strftime("%Y%m%d"))
+        request.set("endDate", end.strftime("%Y%m%d"))
+        request.set("periodicitySelection", "DAILY")
+        session.sendRequest(request)
+
+        dates, values = [], []
+        done = False
+        while not done:
+            event = session.nextEvent(500)
+            for msg in event:
+                if msg.hasElement("securityData"):
+                    field_data = msg.getElement("securityData").getElement("fieldData")
+                    for i in range(field_data.numValues()):
+                        row = field_data.getValueAsElement(i)
+                        if row.hasElement(field):
+                            dates.append(row.getElementAsDatetime("date"))
+                            values.append(row.getElementAsFloat(field))
+            if event.eventType() == blpapi.Event.RESPONSE:
+                done = True
+
+        all_series[ticker] = pd.Series(values, index=pd.to_datetime(dates))
+
+    session.stop()
+    return pd.DataFrame(all_series).sort_index()
+
+
+# ---------------------------------------------------------------------------
+# Mock data engineered to match the planted pattern story
+# ---------------------------------------------------------------------------
+# Key dates for the planted pattern (June 2026 FOMC, then the unwind)
+_FOMC_DATE = dt.date(2026, 6, 17)
+_UNWIND_START = dt.date(2026, 6, 30)
+_UNWIND_END = dt.date(2026, 7, 8)
+
+# Planted decomposition of the unwind (ground truth for notebook 02). w = share * 6 so the AVERAGE is 1
+# (six equally-weighted components). 30y unwinds ~1.9x the average move,
+# gold barely moves.
+_UNWIND_SHARES = {
+    "30y":   0.31,
+    "dxy":   0.17,
+    "swap":  0.17,
+    "fomc":  0.16,
+    "oil":   0.16,
+    "gold":  0.03,
+}
+
+# ticker -> (component_key, credibility_sign, base_level, unit_per_z, noise)
+#   credibility_sign: +1 if the series RISES when credibility rises
+#   unit_per_z:       realistic size of a 1-z move in the series' own units
+_MOCK_CONFIG = {
+    "USGG30YR Index": ("30y",  -1, 4.80,   0.22, 0.35),
+    "DXY Curncy":     ("dxy",  +1, 100.0,  1.50, 0.35),
+    "USSWIT5 Curncy": ("swap", -1, 2.50,   0.07, 0.35),
+    "XAU Curncy":     ("gold", -1, 2900.0, 45.0, 0.35),
+    "CL1 Comdty":     ("oil",  -1, 70.0,   2.50, 0.35),
+    "FEDL01 Index":   (None,    0, 4.33,   0.0,  0.01),
+    # FFQ6 handled specially below (built from FEDL01 + planted hike pricing)
+}
+
+
+def _credibility_path(dates):
+    """
+    The hidden 'true' factor path:
+    oscillation through the sample, spike at June FOMC, plateau, unwind.
+    Returns (base_oscillation, spike_profile) as numpy arrays.
+    """
+    rng = np.random.default_rng(11)
+    n = len(dates)
+
+    # slow oscillation: an AR(1) process, scaled to roughly +/- 0.8
+    base = np.zeros(n)
+    for t in range(1, n):
+        base[t] = 0.97 * base[t - 1] + rng.normal(0, 0.18)
+    base = 0.8 * base / max(1e-9, np.std(base))
+
+    # spike profile: 0 -> 1 ramp over ~4 days at the FOMC, hold, then handled
+    # per-component in the unwind (different components unwind by different
+    # amounts, which is what creates the planted pattern decomposition).
+    spike = np.zeros(n)
+    d = np.array([x.date() if hasattr(x, "date") else x for x in dates])
+    ramp_days = 4
+    for t in range(n):
+        if d[t] >= _FOMC_DATE:
+            days_in = np.busday_count(_FOMC_DATE, d[t]) + 1
+            spike[t] = min(1.0, days_in / ramp_days)
+    return base, spike, d
+
+
+def _unwind_fraction(d, w):
+    """
+    How much of the spike has been given back by date d, for a component
+    whose total unwind is w (w=1 -> gives back exactly the spike).
+    Linear ramp between _UNWIND_START and _UNWIND_END.
+    """
+    total_days = max(1, np.busday_count(_UNWIND_START, _UNWIND_END))
+    out = np.zeros(len(d))
+    for t in range(len(d)):
+        if d[t] >= _UNWIND_END:
+            out[t] = w
+        elif d[t] >= _UNWIND_START:
+            out[t] = w * (np.busday_count(_UNWIND_START, d[t]) / total_days)
+    return out
+
+
+def _bdh_mock(tickers, field, start, end):
+    rng = np.random.default_rng(99)
+    dates = pd.bdate_range(start, end)
+    base, spike, d = _credibility_path(dates)
+
+    spike_size = 1.5   # peak z-height of the June FOMC move
+    unwind_scale = 0.55  # on average, components give back ~80% of the spike
+
+    out = {}
+    for ticker in tickers:
+        if ticker == "FFQ6 Comdty":
+            # Fed funds Aug-26 future. Price = 100 - expected average rate.
+            # We plant: expected rate = effective rate + hike pricing,
+            # where hike pricing follows the credibility path.
+            w = _UNWIND_SHARES["fomc"] * 6 * unwind_scale
+            signal = base + spike_size * (spike - _unwind_fraction(d, w) * spike.clip(max=1.0))
+            hike_bp = 4.0 + 7.0 * (signal + 0.35 * rng.standard_normal(len(dates)))
+            fedl = 4.33
+            out[ticker] = pd.Series(100.0 - fedl - hike_bp / 100.0, index=dates)
+            continue
+
+        if ticker in _MOCK_CONFIG:
+            key, sign, level0, unit, noise = _MOCK_CONFIG[ticker]
+            if key is None:  # FEDL01: flat effective funds rate
+                out[ticker] = pd.Series(
+                    level0 + noise * rng.standard_normal(len(dates)), index=dates)
+                continue
+            w = _UNWIND_SHARES[key] * 6 * unwind_scale
+            signal = base + spike_size * (spike - _unwind_fraction(d, w) * spike.clip(max=1.0))
+            levels = level0 + unit * (sign * signal
+                                      + noise * rng.standard_normal(len(dates)))
+            out[ticker] = pd.Series(levels, index=dates)
+        else:
+            # unknown ticker: seeded random walk
+            trng = np.random.default_rng(abs(hash(ticker)) % (2**32))
+            out[ticker] = pd.Series(
+                100.0 * np.cumprod(1 + 0.01 * trng.standard_normal(len(dates))),
+                index=dates)
+
+    return pd.DataFrame(out)
+
+
+# ---------------------------------------------------------------------------
+# Public function
+# ---------------------------------------------------------------------------
+def bdh(tickers, field="PX_LAST", start=None, end=None):
+    """Historical daily data: rows = dates, columns = tickers."""
+    if end is None:
+        end = dt.date.today()
+    if start is None:
+        start = end - dt.timedelta(days=365 * 2)
+    if MOCK_MODE:
+        return _bdh_mock(tickers, field, start, end)
+    return _bdh_real(tickers, field, start, end)

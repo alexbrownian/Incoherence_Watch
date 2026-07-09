@@ -1,0 +1,13 @@
+# generated data - re-created by the notebooks / run_daily.py
+incoherence_monitor/data/
+incoherence_monitor/logs/
+*.db
+
+# cached factor outputs (regenerate by running notebook 01)
+inflation_credibility_factor/signed_zscores.csv
+inflation_credibility_factor/factor.csv
+
+# python junk
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
