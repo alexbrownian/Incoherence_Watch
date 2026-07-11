@@ -213,3 +213,59 @@ def bdh(tickers, field="PX_LAST", start=None, end=None):
     if MOCK_MODE:
         return _bdh_mock(tickers, field, start, end)
     return _bdh_real(tickers, field, start, end)
+
+
+# ---------------------------------------------------------------------------
+# bds: bulk data (lists), used for the economic-event calendar
+# ---------------------------------------------------------------------------
+def _bds_real(ticker, field):
+    """
+    Bulk-field request (like Excel's BDS): returns a list of values.
+    Used for e.g. ECO_FUTURE_RELEASE_DATE_LIST on "FDTR Index" (FOMC).
+    """
+    session = _start_session()
+    service = session.getService("//blp/refdata")
+
+    request = service.createRequest("ReferenceDataRequest")
+    request.getElement("securities").appendValue(ticker)
+    request.getElement("fields").appendValue(field)
+    session.sendRequest(request)
+
+    values = []
+    done = False
+    while not done:
+        event = session.nextEvent(500)
+        for msg in event:
+            if msg.hasElement("securityData"):
+                sec = msg.getElement("securityData").getValueAsElement(0)
+                field_data = sec.getElement("fieldData")
+                if field_data.hasElement(field):
+                    bulk = field_data.getElement(field)
+                    for i in range(bulk.numValues()):
+                        row = bulk.getValueAsElement(i)
+                        # each row is a tiny record; take its first element
+                        values.append(row.getElement(0).getValue())
+        if event.eventType() == blpapi.Event.RESPONSE:
+            done = True
+
+    session.stop()
+    return values
+
+
+# mock calendars: FOMC schedule + monthly CPI/NFP-style dates
+_MOCK_CALENDARS = {
+    "FDTR Index": ["2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09"],
+    "CPI YOY Index": ["2026-07-14", "2026-08-12", "2026-09-11", "2026-10-13"],
+    "NFP TCH Index": ["2026-08-07", "2026-09-04", "2026-10-02", "2026-11-06"],
+}
+
+
+def bds(ticker, field):
+    """
+    Bulk data: list of values for one ticker/field.
+    Example: bds("FDTR Index", "ECO_FUTURE_RELEASE_DATE_LIST")
+             -> upcoming FOMC decision dates.
+    """
+    if MOCK_MODE:
+        return list(_MOCK_CALENDARS.get(ticker, []))
+    return _bds_real(ticker, field)

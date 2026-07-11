@@ -86,3 +86,17 @@ def build_factor(signed_z, weights=None):
     for name in signed_z.columns:
         factor = factor + signed_z[name] * weights[name]
     return factor
+
+
+def format_time_axis(ax):
+    """Monthly major ticks, weekly minor gridlines, readable labels."""
+    import matplotlib.dates as mdates
+    ax.xaxis.set_major_locator(mdates.MonthLocator())
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b-%y"))
+    ax.xaxis.set_minor_locator(mdates.WeekdayLocator(byweekday=0))  # Mondays
+    ax.grid(which="major", axis="x", alpha=0.25)
+    ax.grid(which="minor", axis="x", alpha=0.08)
+    ax.grid(axis="y", alpha=0.2)
+    for label in ax.get_xticklabels():
+        label.set_rotation(45)
+        label.set_fontsize(8)

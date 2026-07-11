@@ -29,8 +29,9 @@ decomposes *exactly* into six component contributions — useful for asking
 
 | # | Notebook | What it does |
 |---|----------|--------------|
-| 1 | `01_build_factor.ipynb` | Pulls the 6 series from Bloomberg, builds the FOMC-pricing leg from fed funds futures, computes the 21d EWM z-scores, combines into the factor, plots it plus a per-component contribution stack. Caches results to CSV. |
-| 2 | `02_validate_and_predict.ipynb` | **Match:** overlays the factor on a benchmark trace digitized from the target chart (editable anchor points), scores 12 method variants (halflife/span/com x level/change x WTI/Brent) and adopts the best — model *selection*, not curve-fitting; weights stay equal, with a regularized weight fit used only as a diagnostic. **Decompose:** attributes the latest peak-to-now move to components (checked against planted ground truth in mock mode). **Predict:** AR(1) fan chart, 3-month horizon, plus a `live_refresh()` that re-pulls to today and extrapolates. |
+| 1 | `01_build_factor.ipynb` | Builds the factor the way we believe the original was made: six Bloomberg series -> signed 21d EWM z-scores -> equal-weighted average. The lesson notebook. |
+| 2 | `02_validate_and_predict.ipynb` | Validates that method: digitized benchmark trace (checker only), scores 12 method variants and adopts the best, pulls the FOMC/CPI/NFP event calendar from the Bloomberg API and annotates the chart, decomposes the latest move, predicts with AR(1) on the **equal-weight** factor, and provides `live_refresh()` to pull to today and extrapolate. |
+| 3 | `03_fit_chart_and_compare.ipynb` | Deliberately fits weights to the chart — with guard rails (ridge pull toward equal weights + out-of-sample validation that catches overfitting live). Predicts with the fitted factor, then compares both predictions: side-by-side plots and an overlay. Agreement = the method carries the signal. |
 
 ## Supporting files
 
