@@ -32,15 +32,27 @@ decomposes *exactly* into six component contributions — useful for asking
 | 1 | `01_build_factor.ipynb` | Builds the factor the way we believe the original was made: six Bloomberg series -> signed 21d EWM z-scores -> equal-weighted average. The lesson notebook. |
 | 2 | `02_validate_and_predict.ipynb` | Validates that method: digitized benchmark trace (checker only), scores 12 method variants and adopts the best, pulls the FOMC/CPI/NFP event calendar from the Bloomberg API and annotates the chart, decomposes the latest move, predicts with AR(1) on the **equal-weight** factor, and provides `live_refresh()` to pull to today and extrapolate. |
 | 3 | `03_fit_chart_and_compare.ipynb` | Deliberately fits weights to the chart — with guard rails (ridge pull toward equal weights + out-of-sample validation that catches overfitting live). Predicts with the fitted factor, then compares both predictions: side-by-side plots and an overlay. Agreement = the method carries the signal. |
+| 4 | `04_yields_vs_prediction.ipynb` | Three overlay charts — 2y, 5y and 10y Treasury yields each plotted against the factor and its forecast fan (dual axes), with FOMC/CPI/NFP annotations and per-tenor change-correlations. 2y = policy leg (moves WITH the factor), 10y = credibility-premium leg (moves AGAINST it in repricings). |
 
 ## Supporting files
 
 | File | What it is |
 |------|-----------|
+| `make_cix_formula.py` | Generates the frozen-constant CIX formula for the Terminal (see below). |
 | `factor_lib.py` | The construction as importable functions (with the method variants). Notebook 01 is the lesson; this is the source of truth for `live_refresh()`. |
 | `bbg.py` | Bloomberg plumbing + mock mode. The mock plants a known spike-and-unwind pattern with known component shares, giving the notebooks ground truth to test against. |
-| `signed_zscores.csv`, `factor.csv` | Caches written by notebook 01, read by notebook 02. |
-| `factor_recreation.png`, `factor_forecast.png` | The charts, saved on every run. |
+| `signed_zscores.csv`, `factor.csv`, `benchmark.csv`, `events.csv`, `chosen_method.json`, `fitted_weights.json`, `forecast_*.csv` | Caches and adopted settings written by the notebooks (all gitignored; regenerated on each run). |
+| `factor_recreation.png`, `factor_vs_benchmark_best.png`, `factor_live.png`, `factor_fitted_vs_equal.png`, `forecast_side_by_side.png`, `forecast_overlay.png` | The charts, re-saved on every run. |
+
+## Making it a Bloomberg CIX
+
+`python make_cix_formula.py` prints a paste-ready formula for CIX <GO>
+(Custom Index). CIX can't compute rolling EWM z-scores, so the script
+freezes today's EWM mean/std of each component into the formula as
+constants - the resulting `.INFLCRED Index` tracks the true factor
+closely and drifts slowly as vols change. Re-run the script every week
+or two and refresh the formula. Once saved, the CIX works in GP, ALRT,
+and via the API like any ticker.
 
 ## Tuning knobs
 

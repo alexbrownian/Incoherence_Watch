@@ -58,46 +58,81 @@ def _start_session():
     return session
 
 
+_SESSION = None  # one shared connection, reused across every call
+
+
+def _get_session():
+    """Open the Bloomberg session once and reuse it (much faster)."""
+    global _SESSION
+    if _SESSION is None:
+        _SESSION = _start_session()
+    return _SESSION
+
+
 def _bdh_real(tickers, field, start, end):
     """
-    Send a HistoricalDataRequest to Bloomberg, one ticker at a time,
-    and stitch the answers into one DataFrame (dates x tickers).
-
-    Doing one ticker per request is slightly slower but MUCH easier to
-    read and debug than parsing a multi-ticker response.
+    ONE HistoricalDataRequest for ALL tickers at once (10-20x faster than
+    one request per ticker). Bloomberg streams the answer back one
+    security per message; we collect them until the final RESPONSE event.
     """
-    session = _start_session()
+    import time
+
+    session = _get_session()
     service = session.getService("//blp/refdata")
-    all_series = {}
 
+    request = service.createRequest("HistoricalDataRequest")
     for ticker in tickers:
-        request = service.createRequest("HistoricalDataRequest")
         request.getElement("securities").appendValue(ticker)
-        request.getElement("fields").appendValue(field)
-        request.set("startDate", start.strftime("%Y%m%d"))
-        request.set("endDate", end.strftime("%Y%m%d"))
-        request.set("periodicitySelection", "DAILY")
+    request.getElement("fields").appendValue(field)
+    request.set("startDate", start.strftime("%Y%m%d"))
+    request.set("endDate", end.strftime("%Y%m%d"))
+    request.set("periodicitySelection", "DAILY")
+    session.sendRequest(request)
 
-        session.sendRequest(request)
+    all_series = {}
+    last_progress = time.time()
+    done = False
+    while not done:
+        event = session.nextEvent(500)  # wait up to 500 ms for the next batch
 
-        dates, values = [], []
-        done = False
-        while not done:
-            event = session.nextEvent(500)  # wait up to 500 ms
-            for msg in event:
-                if msg.hasElement("securityData"):
-                    field_data = msg.getElement("securityData").getElement("fieldData")
-                    for i in range(field_data.numValues()):
-                        row = field_data.getValueAsElement(i)
-                        if row.hasElement(field):
-                            dates.append(row.getElementAsDatetime("date"))
-                            values.append(row.getElementAsFloat(field))
-            if event.eventType() == blpapi.Event.RESPONSE:
-                done = True  # RESPONSE means this request is finished
+        if event.eventType() == blpapi.Event.TIMEOUT:
+            # nothing arrived in this half second; give up after 30s of silence
+            if time.time() - last_progress > 30:
+                raise TimeoutError(
+                    "No data from Bloomberg for 30s. Check the Terminal is "
+                    "logged in and the tickers are valid.")
+            continue
 
-        all_series[ticker] = pd.Series(values, index=pd.to_datetime(dates))
+        for msg in event:
+            if not msg.hasElement("securityData"):
+                continue
+            sec = msg.getElement("securityData")
+            ticker = sec.getElementAsString("security")
 
-    session.stop()
+            if sec.hasElement("securityError"):
+                err = sec.getElement("securityError").getElementAsString("message")
+                print(f"WARNING - {ticker}: {err} (skipped)")
+                last_progress = time.time()
+                continue
+
+            field_data = sec.getElement("fieldData")
+            dates, values = [], []
+            for i in range(field_data.numValues()):
+                row = field_data.getValueAsElement(i)
+                if row.hasElement(field):
+                    dates.append(row.getElementAsDatetime("date"))
+                    values.append(row.getElementAsFloat(field))
+            all_series[ticker] = pd.Series(values, index=pd.to_datetime(dates))
+            print(f"  got {ticker}: {len(values)} rows")
+            last_progress = time.time()
+
+        if event.eventType() == blpapi.Event.RESPONSE:
+            done = True  # final message received
+
+    missing = [t for t in tickers if t not in all_series]
+    if missing:
+        print(f"WARNING - no data returned for: {missing}")
+
     return pd.DataFrame(all_series).sort_index()
 
 
@@ -106,7 +141,7 @@ def _bdp_real(tickers, fields):
     Send a ReferenceDataRequest ('latest value' request) to Bloomberg.
     Returns a DataFrame: one row per ticker, one column per field.
     """
-    session = _start_session()
+    session = _get_session()
     service = session.getService("//blp/refdata")
 
     request = service.createRequest("ReferenceDataRequest")
@@ -138,7 +173,6 @@ def _bdp_real(tickers, fields):
         if event.eventType() == blpapi.Event.RESPONSE:
             done = True
 
-    session.stop()
     return pd.DataFrame.from_dict(rows, orient="index")
 
 

@@ -1,5 +1,5 @@
 {
-  "ewm_kind": "halflife",
+  "ewm_kind": "span",
   "z_on": "level",
-  "oil": "CL1 Comdty"
+  "oil": "CO1 Comdty"
 }

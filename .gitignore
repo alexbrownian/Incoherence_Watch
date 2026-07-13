@@ -3,9 +3,15 @@ incoherence_monitor/data/
 incoherence_monitor/logs/
 *.db
 
-# cached factor outputs (regenerate by running notebook 01)
-inflation_credibility_factor/signed_zscores.csv
-inflation_credibility_factor/factor.csv
+# generated factor outputs (recreated by running notebooks 01-03)
+**/signed_zscores.csv
+**/factor.csv
+**/benchmark.csv
+**/events.csv
+**/forecast_equal.csv
+**/forecast_fitted.csv
+**/chosen_method.json
+**/fitted_weights.json
 
 # python junk
 __pycache__/

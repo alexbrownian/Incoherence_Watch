@@ -92,6 +92,7 @@ def main():
         new_events = summary["events"].sum()
 
         log(f, f"Monitored pairs : {len(summary)}")
+        log(f, f"Events (all-time in this data window): {new_events}")
         log(f, f"Currently BROKEN: {len(broken)}")
         for _, row in broken.iterrows():
             log(f, f"  !! {row['pair']}  (1m corr {row['corr_short']:+.2f}, "

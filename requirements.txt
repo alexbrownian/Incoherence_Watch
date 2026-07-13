@@ -1,0 +1,11 @@
+# Install everything with:  pip install -r requirements.txt
+#
+# The line below tells pip to ALSO look at Bloomberg's own package server -
+# blpapi is not on the normal PyPI, so without this line it can't be found.
+--extra-index-url https://blpapi.bloomberg.com/repository/releases/python/simple/
+
+pandas>=2.0
+numpy>=1.24
+matplotlib>=3.7
+jupyter
+blpapi

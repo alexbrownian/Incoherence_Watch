@@ -17,6 +17,10 @@ announced **mock mode** with synthetic data, so the logic can be developed and
 tested anywhere.
 
 ```
-pip install pandas numpy matplotlib
-pip install blpapi --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple/
+pip install -r requirements.txt
 ```
+
+That installs pandas, numpy, matplotlib, jupyter AND `blpapi` in one go —
+the requirements file points pip at Bloomberg's own package server for
+blpapi (it is not on regular PyPI). A logged-in Terminal is still needed
+at runtime for real data.
