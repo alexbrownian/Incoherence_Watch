@@ -88,12 +88,21 @@ def build_factor(signed_z, weights=None):
     return factor
 
 
-def format_time_axis(ax):
-    """Monthly major ticks, weekly minor gridlines, readable labels."""
+def format_time_axis(ax, freq="month"):
+    """
+    Readable date axis.
+      freq="month": monthly major ticks, weekly minor gridlines (long windows)
+      freq="week" : weekly major ticks, daily minor gridlines (short windows)
+    """
     import matplotlib.dates as mdates
-    ax.xaxis.set_major_locator(mdates.MonthLocator())
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b-%y"))
-    ax.xaxis.set_minor_locator(mdates.WeekdayLocator(byweekday=0))  # Mondays
+    if freq == "week":
+        ax.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=0))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+        ax.xaxis.set_minor_locator(mdates.DayLocator())
+    else:
+        ax.xaxis.set_major_locator(mdates.MonthLocator())
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b-%y"))
+        ax.xaxis.set_minor_locator(mdates.WeekdayLocator(byweekday=0))
     ax.grid(which="major", axis="x", alpha=0.25)
     ax.grid(which="minor", axis="x", alpha=0.08)
     ax.grid(axis="y", alpha=0.2)
