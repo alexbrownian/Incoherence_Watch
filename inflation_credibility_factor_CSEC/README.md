@@ -44,6 +44,26 @@ decomposes *exactly* into six component contributions — useful for asking
 | `signed_zscores.csv`, `factor.csv`, `benchmark.csv`, `events.csv`, `chosen_method.json`, `fitted_weights.json`, `forecast_*.csv` | Caches and adopted settings written by the notebooks (all gitignored; regenerated on each run). |
 | `factor_recreation.png`, `factor_vs_benchmark_best.png`, `factor_live.png`, `factor_fitted_vs_equal.png`, `forecast_side_by_side.png`, `forecast_overlay.png` | The charts, re-saved on every run. |
 
+## Going live on Bloomberg (daily auto-update)
+
+`python run_daily.py` = the whole pipeline in one command: pull to today,
+rebuild the factor, forecast 21 days, refresh `factor_live.png`, and write
+Terminal-ready files to `bloomberg_upload/` (factor history + forecast
+CSVs for CDE import, refreshed CIX formula). Schedule it like the
+monitor's script:
+
+```
+schtasks /Create /TN "FactorDaily" /SC WEEKLY /D MON,TUE,WED,THU,FRI ^
+  /ST 17:35 /TR "cmd /c cd /d C:\Users\alexd\Desktop\GIC\Incoherence\inflation_credibility_factor_CSEC && python run_daily.py"
+```
+
+Terminal-side (one-time): create a custom field in CDE <GO> and import
+`bloomberg_upload/factor_history.csv` - the factor then charts in GP <GO>
+directly against USGG2YR/5YR/10YR. Re-import to refresh (the Desktop API
+is read-only, so this import is the one manual step); or use the CIX for
+a zero-touch live intraday line, or BQuant for fully-inside-Bloomberg
+automation if entitled.
+
 ## Making it a Bloomberg CIX
 
 `python make_cix_formula.py` prints a paste-ready formula for CIX <GO>

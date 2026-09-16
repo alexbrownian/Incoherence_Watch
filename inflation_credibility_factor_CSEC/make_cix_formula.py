@@ -58,35 +58,67 @@ for name in components.columns:
     frozen[name] = (round(float(ewm.mean().iloc[-1]), 4),
                     round(float(ewm.std().iloc[-1]), 4))
 
-# CIX lets you assign each security a letter, then write math in letters.
-# fomc_hike is built from two tickers, so it uses two letters (a, b).
-letters = {"FFQ6 Comdty": "a", "FEDL01 Index": "b",
-           "USGG30YR Index": "c", "USSWIT5 Curncy": "d",
-           "DXY Curncy": "e", "XAU Curncy": "f", method["oil"]: "g"}
-
+# The modern CIX editor (CIXN) takes FULL TICKERS inline in the formula -
+# typing a ticker means "that security's last price" (see the on-screen
+# examples like (GOOG US Equity + META US Equity)/2).
+oil = method["oil"]
 m, s = frozen["fomc_hike"]
-terms = [f"+((((100-a)-b)*100-{m})/{s})"]      # fomc_hike, sign +
-for name, letter, sign in [("yield_30y", "c", "-"),
-                           ("infl_swap_5y", "d", "-"),
-                           ("dxy", "e", "+"),
-                           ("gold", "f", "-"),
-                           ("oil", "g", "-")]:
+terms = [f"((((100-FFQ6 Comdty)-FEDL01 Index)*100-{m})/{s})"]
+for name, ticker, sign in [("yield_30y", "USGG30YR Index", "-"),
+                           ("infl_swap_5y", "USSWIT5 Curncy", "-"),
+                           ("dxy", "DXY Curncy", "+"),
+                           ("gold", "XAU Curncy", "-"),
+                           ("oil", oil, "-")]:
     m, s = frozen[name]
-    terms.append(f"{sign}(({letter}-{m})/{s})")
+    terms.append(f"{sign}(({ticker}-{m})/{s})")
 
 formula = "(" + "".join(terms) + ")/6"
 
 print("=" * 70)
-print("1) On the Terminal: CIX <GO>  ->  Create  ->  Custom Index")
-print("2) Suggested name: .INFLCRED  (becomes ticker  .INFLCRED Index)")
-print("3) Add these securities and give them these letters:\n")
-for ticker, letter in letters.items():
-    print(f"     {letter} = {ticker}")
-print("\n4) Paste this formula:\n")
+print("1) Terminal: CIXN <GO>  ->  1) Create")
+print("2) Ticker: INFLCRED   Name: Inflation Credibility Factor")
+print("3) Paste this into the big expression box:\n")
 print(formula)
 print()
-print("5) Save. Now GP <GO>, ALRT, and even this project's bbg.bdh()")
-print("   can chart/pull  .INFLCRED Index  like any other ticker.")
+print("4) Check the Preview Chart, then save. Ticker = .INFLCRED Index")
 print("=" * 70)
 print(f"(constants frozen from data through {raw.index[-1].date()};")
-print(" re-run this script every week or two and update the formula)")
+print(" re-run this script every week or two and re-paste)")
+
+
+# ---------------------------------------------------------------------------
+# ALTERNATIVE: the same formula expanded to LINEAR form (fewest parentheses,
+# friendliest possible syntax for the CIX parser).
+# Math: each leg sign*(x-m)/s/6 = (sign/(6s))*x - sign*m/(6s); the FOMC leg
+# ((100-a-b)*100-m)/s/6 contributes -100/(6s) per futures/funds leg. All the
+# constant pieces collapse into one number K.
+# ---------------------------------------------------------------------------
+def linear_formula(frozen, oil):
+    K = 0.0
+    coeffs = []  # (coefficient, ticker)
+
+    m, s = frozen["fomc_hike"]
+    K += (10000.0 - m) / (6 * s)
+    coeffs.append((-100.0 / (6 * s), "FFQ6 Comdty"))
+    coeffs.append((-100.0 / (6 * s), "FEDL01 Index"))
+
+    for name, ticker, sign in [("yield_30y", "USGG30YR Index", -1),
+                               ("infl_swap_5y", "USSWIT5 Curncy", -1),
+                               ("dxy", "DXY Curncy", +1),
+                               ("gold", "XAU Curncy", -1),
+                               ("oil", oil, -1)]:
+        m, s = frozen[name]
+        coeffs.append((sign / (6 * s), ticker))
+        K += -sign * m / (6 * s)
+
+    parts = [f"{K:.6f}"]
+    for c, ticker in coeffs:
+        op = "+" if c >= 0 else "-"
+        parts.append(f"{op}{abs(c):.6f}*{ticker}")
+    return "".join(parts)
+
+
+print()
+print("ALTERNATIVE (same factor, linear form - simplest syntax):")
+print()
+print(linear_formula(frozen, method["oil"]))

@@ -17,3 +17,4 @@ incoherence_monitor/logs/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+**/bloomberg_upload/

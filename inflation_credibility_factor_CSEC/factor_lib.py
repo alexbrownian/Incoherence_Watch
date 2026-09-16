@@ -109,3 +109,29 @@ def format_time_axis(ax, freq="month"):
     for label in ax.get_xticklabels():
         label.set_rotation(45)
         label.set_fontsize(8)
+
+
+def ar1_forecast(series, horizon):
+    """
+    Fit AR(1) (tomorrow = a + b*today + noise) and forecast `horizon`
+    business days ahead. Returns (future_dates, path, spread, info).
+    Same math the notebooks teach - kept here so run_daily.py reuses it.
+    """
+    import numpy as np
+
+    y = series.dropna()
+    b, a = np.polyfit(y.values[:-1], y.values[1:], 1)
+    noise_std = (y.values[1:] - (a + b * y.values[:-1])).std()
+
+    path, spread = [], []
+    value = y.iloc[-1]
+    for k in range(1, horizon + 1):
+        value = a + b * value
+        path.append(value)
+        spread.append(noise_std * np.sqrt((1 - b ** (2 * k)) / (1 - b ** 2)))
+
+    future_dates = pd.bdate_range(y.index[-1], periods=horizon + 1)[1:]
+    info = {"a": a, "b": b, "noise_std": noise_std,
+            "half_life": np.log(0.5) / np.log(b),
+            "long_run_mean": a / (1 - b)}
+    return future_dates, np.array(path), np.array(spread), info
